@@ -1,0 +1,319 @@
+---
+title: 'ExCM Analysis: Centralities'
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+Libraries `igraph` and `qgraph` are standard libraries for network analysis in R.
+
+```{r libraries, results='hide', error=FALSE,warning=FALSE,message=FALSE}
+library(igraph)
+library(qgraph)
+library('visNetwork')
+```
+
+The concept map has been written in a .dot file, transformed to adjacency matrix via RStudio, and manually updated to present weighted edges. The weights will be manipulated in the programme below, therefore their values are arbitrary.
+
+```{r datasets}
+#read the weighted adjacency file and take only columns 2:188,
+#as the first column is only row names, which are not needed
+dat <- read.csv("neki2.csv")
+aMat <- dat[1:187,2:188]
+DaMat <- dat[1:187,2:188]
+
+#change the data into a matrix
+DaMat <- as.matrix(DaMat)
+DaMat <- as.directed(graph.adjacency(DaMat))
+```
+
+Now we manipulate the matrices to put them in the right format for the first analysis with all examples included.
+
+```{r data for first analysis with included examples}
+#set all weights to same for the first centralities
+aMat[aMat=="20"]="1"
+aMat <- as.matrix(aMat)
+aMat <- as.directed(graph.adjacency(aMat))
+
+#check if the graph is connected
+is_connected(aMat)
+```
+
+Now we calculate the centralities for the data with included examples. `centrality_auto` calculates several centrality measures at the same time, including *betweenness*, *closeness*, and *degree* centrality. The latter (and several others) we identified as not relevant for our study, therefore we will only focus on *betweenness* and *centrality*.
+Additionally, we include a third measure of centrality, namely the *PageRank*. That one needs to be calculated separately.
+
+```{r centralities with all concepts}
+#creates a table with the Betweenness and Closeness for all concepts
+cFull <- centrality_auto(aMat)
+cFull <- cFull$node.centrality
+
+#calculate PageRank for all concepts
+PRFull <- page.rank(aMat, directed=TRUE)
+PRFull <- PRFull$vector
+PRFull <- data.frame(matrix(unlist(PRFull), nrow=187, byrow=T))
+```
+
+That was simple!
+
+... now comes the hard part. First, we prepare the data for the second analysis without included examples. In the original file, examples have the weight of **1**, while main concepts have the weight of **20** (arbitrary numbers). Now, we will set examples to **0** and main concepts to **1** (the latter is not really necessary, we only set it to 1 for faster calculations). The rows and columns with examples now have a sum of **0** in the adjacency matrix (they are not connected), therefore we can remove them by identifying the zero sums.
+
+```{r centralities -examples}
+#prepare for a new table with no examples
+aMat2 <- dat[1:187, 2:188]  
+aMat2[aMat2==1] = 0 
+aMat2[aMat2==20] = 1 
+aMat2 <- as.data.frame(aMat2)
+
+#delete the zero columns and rows (examples)
+aMat2 <- aMat2[which(colSums(aMat2)!=0), which(colSums(aMat2)!=0)]
+aMat2 <- aMat2[which(colSums(aMat2)!=0), which(colSums(aMat2)!=0)]
+bMat2 <- aMat2
+aMat2 <- as.matrix(aMat2)
+aMat2 <- as.directed(graph.adjacency(aMat2))
+```
+
+Now we can analyse the new matrix with the same procedure as before. First, we identify *betweenness* and *centrality*, and then we move on to *PageRank*.
+
+```{r list with betweenness and closeness}
+#create a list with the Betweenness and Closeness
+cMain <- centrality_auto(aMat2)
+cMain <- cMain$node.centrality
+
+#calculate PageRank
+PRMain <- page.rank(aMat2,directed=TRUE)
+PRMain <- PRMain$vector
+PRMain <- data.frame(matrix(unlist(PRMain), nrow=87, byrow=T))
+```
+
+Done!
+However, the data from the first analysis and the second one is not comparable, as we have only 65 concepts in the second one, and 187 in the first one. Therefore we need to match the concepts from the second analysis to the table in the first one.
+We will do this by setting a table with all 187 concepts (first row) and then the programme will enter the centralities based on the names matching.
+
+```{r table for betweenness, closeness, and PageRank}
+#create a table for betweenness, closeness, and PageRank
+BIGcMain <- data.frame(nrow=187,ncol=4)
+BIGcMain[1:187,1] <- row.names(cFull)
+BIGcMain[1:187, 2:4] = 0
+for(i in 1:187){
+  for(j in 1:87){
+    if(rownames(cMain)[j]==BIGcMain[i,1]){
+    BIGcMain[i,2]=cMain[j,1]
+    BIGcMain[i,3]=cMain[j,2]
+    BIGcMain[i,4]=PRMain[j,1]
+    break
+    }
+  }
+}
+```
+
+Almost done! We now put all results in one big table, always keeping the full analysis with examples in the first and the analysis without examples in the second column.
+
+```{r RESULTS}
+#overview of all three centralities
+cenTable <- cbind(BFull=cFull$Betweenness,BMain=BIGcMain$ncol,
+                  CFull=cFull$Closeness,CMain=BIGcMain$V3,
+                  PrFull=PRFull[,1],PrMain=BIGcMain$V4)
+cenTable[1:10,]
+```
+
+As these numbers tell us nothing, we need to do additional analysis.
+First, let's make a plot. For that, we need to manipulate the data around a bit. Here, I could probably make it neater, but it serves the purpose this way, and I know why what is where :)
+
+```{r plot tables}
+#ranking table for betweenness with examples
+BPlotTable <- data.frame(nrow=187, ncol=2)
+BPlotTable[1:187,2] <- cenTable[1:187,1]
+BPlotTable <- BPlotTable[order(-BPlotTable$ncol),]
+for(i in 1:187){
+  BPlotTable[i,1] = i
+  a<-as.numeric(rownames(BPlotTable)[i])
+  BPlotTable[i,3] <- dat[a,1]
+}
+
+#ranking table for betweenness without examples
+BPlotTable2 <- BPlotTable
+BPlotTable2[1:187,2] <- BIGcMain[1:187,2]
+BPlotTable2[1:187,3] <- BIGcMain[1:187,1]
+BPlotTable2 <- BPlotTable2[order(-BPlotTable2$ncol),]
+for(i in 1:187){
+  BPlotTable2[i,1] = i
+}
+
+#ranking table for closeness with examples
+CPlotTable <- data.frame(nrow=187,ncol=2)
+CPlotTable[1:187,2] <- cenTable[1:187,3]
+CPlotTable <- CPlotTable[order(-CPlotTable$ncol),]
+for(i in 1:187){
+  CPlotTable[i,1] = i
+  a<-as.numeric(rownames(CPlotTable)[i])
+  CPlotTable[i,3] <- dat[a,1]
+}
+
+#ranking table for closeness without examples
+CPlotTable2 <- CPlotTable 
+CPlotTable2[1:187,2] <- BIGcMain[1:187,3]
+CPlotTable2[1:187,3] <- BIGcMain[1:187,1]
+CPlotTable2 <- CPlotTable2[order(-CPlotTable2$ncol),]
+for(i in 1:187){
+  CPlotTable2[i,1] = i
+}
+
+#ranking table for PageRank with examples
+PRPlotTable <- data.frame(nrow=187,ncol=2)
+PRPlotTable[1:187,2] <- cenTable[1:187,5]
+PRPlotTable <- PRPlotTable[order(-PRPlotTable$ncol),]
+for(i in 1:187){
+  PRPlotTable[i,1] = i
+  a<-as.numeric(rownames(PRPlotTable)[i])
+  PRPlotTable[i,3] <- dat[a,1]
+}
+
+#ranking table for PageRank without examples
+PRPlotTable2 <- CPlotTable 
+PRPlotTable2[1:187,2] <- BIGcMain[1:187,4]
+PRPlotTable2[1:187,3] <- BIGcMain[1:187,1]
+PRPlotTable2 <- PRPlotTable2[order(-PRPlotTable2$ncol),]
+for(i in 1:187){
+  PRPlotTable2[i,1] = i
+}
+```
+
+Based on these tables, we can finally look at the top 10 for all included centralities.
+
+```{r Top10}
+rank <- data.frame()
+for(i in 1:187){
+  rank[i,1] = i
+}
+Top10 <- data.frame(Rank=rank,
+                    Betweenness.With.Examples = BPlotTable[1:187,3], Betweenness.No.Examples = BPlotTable2[1:187,3],
+                    Closeness.With.Examples = CPlotTable[1:187,3],Closeness.No.Examples = CPlotTable2[1:187,3],
+                    PageRank.With.Examples = PRPlotTable[1:187,3], PageRank.No.Examples = PRPlotTable2[1:187,3])
+Top10
+```
+
+Based on those tables, we build plots to see if there are any kinks in the data. Here, it is important to note, that all centrality measures here have been ordered separately. Therefore, the #1 in betweenness with examples is not necessarily #1 in betweenness without examples etc.
+
+```{r plots}
+#plotting betweenness
+plot(BPlotTable[1:50,1], BPlotTable[1:50,2],
+     type="l", col="blue", xlab="Rank", ylab="Betweenness score",ylim=c(0,2000))
+lines(BPlotTable2[1:50,1], BPlotTable2[1:50,2],
+      type="l", col="red")
+legend("topright",inset=.05, c("No examples","Examples"),
+       fill=c("red","blue"), horiz=FALSE, box.lty = 0)
+
+#plotting closeness
+plot(CPlotTable2[1:50,1], CPlotTable2[1:50,2],
+     type="l", col="red", xlab="Rank", ylab="Closeness score",ylim=c(0,0.0035))
+lines(CPlotTable[1:50,1], CPlotTable[1:50,2],
+      type="l", col="blue")
+legend("topright",inset=.05, c("No examples","Examples"),
+       fill=c("red","blue"), horiz=FALSE, box.lty = 0)
+
+#plotting PageRank
+plot(PRPlotTable2[1:50,1], PRPlotTable2[1:50,2],
+     type="l", col="red", xlab="Rank", ylab="PageRank score",ylim=c(0,0.040))
+lines(PRPlotTable[1:50,1], PRPlotTable[1:50,2],
+      type="l", col="blue")
+legend("topright",inset=.05, c("No examples","Examples"),
+       fill=c("red","blue"), horiz=FALSE, box.lty = 0)
+```
+
+As we can see, betweenness has a slight kink in the very beginning, but then is has quite a nice curve going on. Closeness, however, only has bigger data until about the 30th concept, regardless of whether or not we include examples.
+
+The analysis with or without examples seem to be converging after a while, and we wanted to know, whether or not the results are correlated. This we do with the help of the Spearman test, to which we add the `exact = FALSE` to allow analysis even in case of ties (which do happen). To see at which point the differences in ranking become insignificant, we plot the p-values of the correlation test in relation to the number of included concepts. E.g., if the number of included concepts it 5, this means that we included the top 5 ranked concepts in the correlation analysis.
+
+The horizontal line on the graph represents the p=0.05, while the vertical line (x=6) shows after which number of included concepts is the data with examples not significantly different from the data without examples any more. Only data until x=30 are included, as the p-value remains close to zero for higher values.
+
+```{r correlation tests for examples}
+cor.tab<-data.frame()
+
+for(i in 3:187){
+  b<-cor.test(~ BFull + BMain, data = cenTable[1:i,1:6], method="spearman",exact=FALSE)
+  c<-cor.test(~ CFull + CMain, data = cenTable[1:i,1:6], method="spearman",exact=FALSE)
+  d<-cor.test(~ PrFull + PrMain, data = cenTable[1:i,1:6], method="spearman",exact=FALSE)
+  cor.tab[i-2,1]<-i
+  cor.tab[i-2,2]<-b$p.value
+  cor.tab[i-2,3]<-c$p.value
+  cor.tab[i-2,4]<-d$p.value
+}
+
+plot(x=cor.tab[1:40,1],y=cor.tab[1:40,2],type="o", lty=2,col = "red", xlab="number of included ranked concepts", ylab="p-value", main="Spearman correlation between data with or without examples, p-values",xlim=c(0,40))
+lines(x=cor.tab[1:40,1],y=cor.tab[1:40,3],type="o", lty=2,col = "blue")
+lines(x=cor.tab[1:40,1],y=cor.tab[1:40,4],type="o", lty=2,col = "green")
+abline(h=0.05, v=6)
+legend(30, 0.6, legend=c("Betweenness", "Closeness", "PageRank"),
+       col=c("red", "blue", "green"), lty=1, cex=0.8, title="Correlations for ...",box.lty = 0)
+```
+We now do the same for comparing the different centrality measures. Again, we use the Spearman's correlation coefficient. As we saw above, the differences between included or excluded examples are minor and insignificant after the first seven concepts for all centrality measures. Therefore, here we only compare the full set of data, including the examples, as the difference between data with or without examples is minor.
+
+Again, the horizontal line represents the p=0.05, while the vertical line (x=16) shows after which included highest ranked concept the difference between all centrality measures becomes insignificant. Only data until x=40 are included, as the p-value remains close to zero for higher values.
+```{r correlation between different measures of centrality}
+cor.table<-data.frame()
+
+for(i in 3:187){
+  b<-cor.test(~ PrFull + BFull, data = cenTable[1:i,1:6], method="spearman",exact=FALSE)
+  c<-cor.test(~ PrFull + CFull, data = cenTable[1:i,1:6], method="spearman",exact=FALSE)
+  d<-cor.test(~ BFull + CFull, data = cenTable[1:i,1:6], method="spearman",exact=FALSE)
+  cor.table[i-2,1]<-i
+  cor.table[i-2,2]<-b$p.value
+  cor.table[i-2,3]<-c$p.value
+  cor.table[i-2,4]<-d$p.value
+}
+
+plot(x=cor.table[1:40,1],y=cor.table[1:40,2],type="o", lty=2,col = "red", xlab="number of included ranked concepts", ylab="p-value", main="Spearman correlation between different centrality measures, p-values",xlim=c(0,40))
+lines(x=cor.table[1:40,1],y=cor.table[1:40,3],type = "o",lty=2,col = "blue")
+lines(x=cor.table[1:40,1],y=cor.table[1:40,4],type = "o",lty=2,col = "green")
+abline(h=0.05, v=16)
+legend(20, 0.7, legend=c("PageRank&Betweenness", "PageRank&Closeness", "Betweenness&Closeness"),
+       col=c("red", "blue", "green"), lty=1, cex=0.8, title="Correlation between...",box.lty = 0)
+```
+What we can see from this plot is that after 16 included concepts, the centrality measures stop being significantly different between each other.
+/n
+
+To finish this, you can finally make your first graph, **hooray**! Here we used the data for *betweenness* of concepts with examples as a function for the size of the nodes.
+
+```{r Graph1}
+#draw the concept map
+Betweenness<-betweenness(DaMat)
+layout(matrix(1:40, 100, 100, byrow = TRUE))
+par(mar=c(0, 2, 2, 0))
+plot(DaMat, vertex.label.cex=2*(Betweenness)/(max(Betweenness)), 
+     vertex.label.color="grey", main="Betweenness", 
+     vertex.size=(30*Betweenness)/max(Betweenness))
+```
+
+Now, we use the data for *betweenness* of concepts without examples as a function for the size of the nodes.
+
+```{r Graph2}
+#draw the concept map
+palf <- colorRampPalette(c("gray80", "dark red")) 
+Betweenness<-betweenness(aMat2)
+layout(matrix(1:40, 100, 100, byrow = TRUE))
+par(mar=c(0, 2, 2, 0))
+plot(aMat2, vertex.label.cex=2*(Betweenness)/(max(Betweenness)), 
+     vertex.label.color="grey", main="Betweenness", 
+     vertex.size=(30*Betweenness)/max(Betweenness))
+```
+
+But do you want to see something really, really, REALLY cool? Here it is. The final monster. The interactive representation of the concept map with color-coded levels and node sizes that reflect the betweenness. Truly fancy stuff.
+
+```{r visnet, warning=FALSE}
+test.visn <- toVisNetworkData(aMat)
+test.visn.nodes<-test.visn$nodes
+test.visn.edges<-test.visn$edges
+edges <- read.csv("edges_labels.csv")
+
+#exported the nodes, added levels manually from the concept map
+nodes <- read.csv("nodes_Level.csv")
+nodes$size <- ((30*cFull$Betweenness/max(cFull$Betweenness))+5)
+edges$arrows <- "to"
+edges$title<-edges$name
+nodes$color.background <- c("#d53e4f","#f46d43","#fdae61","#fee08b","#e6f598","#abdda4","#66c2a5","#3288bd")[nodes$Level]
+nodes$color.highlight.background <- c("#9e0142","#d53e4f","#f46d43","#fdae61","#fee08b","#ffffbf","#e6f598","#abdda4")[nodes$Level]
+visnet<-visNetwork(nodes, edges)
+visOptions(visnet, highlightNearest = TRUE, selectedBy = "Level")
+```
+
+I might be biased, but this is pretty cool (however useless :).
