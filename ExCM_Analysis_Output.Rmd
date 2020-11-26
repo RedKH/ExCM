@@ -2,7 +2,8 @@
 title: "ExCM_Analysis_Output"
 author: "Anja Kranjc Horvat"
 date: "11/26/2020"
-output: html_document
+output: 
+  github_document
 ---
 Libraries `igraph` and `qgraph` are standard libraries for network analysis in R.
 
